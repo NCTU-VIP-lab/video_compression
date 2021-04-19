@@ -1,0 +1,10 @@
+__pycache__
+checkpoints
+pytorch_spynet
+tensorboard
+UVG_1080
+videos
+vimeo
+*.bin
+*.png
+*.txt
