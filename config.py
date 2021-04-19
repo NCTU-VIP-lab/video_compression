@@ -2,13 +2,13 @@
 
 class config_train(object):
     mode = 'gan-train'
-    start_epoch = 21
-    num_epochs = 45
+    start_epoch = 0
+    num_epochs = 15
     state_iter = 5
 
     #20 train normal
     #28 train residual
-    batch_size = 8
+    batch_size = 5
     ema_decay = 0.999
     G_learning_rate = 5e-5
     D_learning_rate = 5e-5
@@ -44,6 +44,7 @@ class config_train(object):
     res_late_start = 0
     use_msssim = False
     use_flow_residual = True
+    use_block = True
 
 
 class config_test(object):
@@ -75,6 +76,7 @@ class config_test(object):
     img_row = 1920
     img_col = 1024
     use_flow_residual = True
+    use_block = True
 
 
     # For Kodak

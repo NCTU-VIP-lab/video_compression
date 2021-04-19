@@ -177,7 +177,7 @@ def trainIter(config, args):
                     prior_encoder_intra, prior_decoder_intra, bit_estimator_intra,
                     res_encoder, res_decoder, flow_encoder, flow_decoder, prior_encoder_inter, prior_decoder_inter, bit_estimator_inter, example, ori_frames, config, args.name, epoch)
                 """
-                utils.sample_test_api_diff(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_frames, config, args.name, epoch)
+                utils.sample_test_diff_block(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_frames, config, args.name, epoch)
                 #utils.sample_test_api(flow_AE, res_AE, example, ori_frames, config, args.name, epoch)
             # ============
             # train G
@@ -187,7 +187,7 @@ def trainIter(config, args):
                 net.zero_grad()
 
             reconstruction_frames = torch.zeros((config.batch_size, config.nb_frame,3,config.img_col,config.img_row)).cuda() 
-            reconstruction_flow = torch.zeros((config.batch_size, config.nb_frame, 2, config.img_col, config.img_row)).cuda()   
+            reconstruction_flow = torch.zeros((config.batch_size, 2, config.img_col, config.img_row)).cuda()   
             #reconstruction_frames[:,0] = example[:,0]
             reconstruction_frame = example[:,0]
             distortion = 0
@@ -200,76 +200,81 @@ def trainIter(config, args):
             for i in range(1,config.nb_frame):
                 # input B C H W, output B 2 H W
                 flow = run.estimate(example[:,i], example[:,i-1]) / max_edge
-                # flow = flow.clamp(0,1)
+                recon_flow, res_criterion, flow_criterion, res_out = utils.diff_forward(
+                    i, max_edge, False, False, flow, 
+                    reconstruction_flow, example, reconstruction_frame, criterion1, 
+                    flow_AE, opt_res_AE, MC_net, res_AE
+                )
+                no_use_loss = ((res_criterion["loss"].item() + flow_criterion["bpp_loss"].item()))
+                if config.use_block is True:
+                    recon_flow_block, res_criterion_block, flow_criterion_block, res_out_block = utils.diff_forward(
+                        i, max_edge, False, True, flow,
+                         reconstruction_flow, example, reconstruction_frame, criterion1, 
+                         flow_AE, opt_res_AE, MC_net, res_AE
+                    )
+                    
+                    use_loss = ((res_criterion_block["loss"].item() + flow_criterion_block["bpp_loss"].item()))
+                    if no_use_loss > use_loss:
+                        res_criterion = res_criterion_block
+                        flow_criterion = flow_criterion_block
+                        recon_flow = recon_flow_block
+                        res_out = res_out_block
+                        no_use_loss = use_loss
+                        
+
                 if i > 1 and config.use_flow_residual is True:
-                    flow_res = flow - reconstruction_flow 
-                    flow_out = opt_res_AE(flow_res)
-                    recon_flow = flow_out["x_hat"] + reconstruction_flow
-                    flow_out["x_hat"] = flow_out["x_hat"] + reconstruction_flow
-                else:
-                    flow_out = flow_AE(flow)
-                    recon_flow = flow_out["x_hat"]
-                
-                flow_criterion = criterion1(flow_out, flow)
-                flow_loss += flow_criterion["mse_loss"].item()
+                    recon_flow_diff, res_criterion_diff, flow_criterion_diff, res_out_diff = utils.diff_forward(
+                        i, max_edge, True, False, flow,
+                         reconstruction_flow, example, reconstruction_frame, criterion1, 
+                         flow_AE, opt_res_AE, MC_net, res_AE
+                    )
+                    use_loss = ((res_criterion_diff["loss"].item() + flow_criterion_diff["bpp_loss"].item()))
+                    if no_use_loss > use_loss:
+                        res_criterion = res_criterion_diff
+                        flow_criterion = flow_criterion_diff
+                        recon_flow = recon_flow_diff
+                        res_out = res_out_diff
+                        no_use_loss = use_loss
+                    
+                    if config.use_block is True:
+                        recon_flow_diff_block, res_criterion_diff_block, flow_criterion_diff_block, res_out_diff_block = utils.diff_forward(
+                            i, max_edge, True, True, flow,
+                            reconstruction_flow, example, reconstruction_frame, criterion1, 
+                            flow_AE, opt_res_AE, MC_net, res_AE
+                        )
+                        use_loss = ((res_criterion_diff_block["loss"].item() + flow_criterion_diff_block["bpp_loss"].item()))
+                        if no_use_loss > use_loss:
+                            res_criterion = res_criterion_diff_block
+                            flow_criterion = flow_criterion_diff_block
+                            recon_flow = recon_flow_diff_block
+                            res_out = res_out_diff_block
+                            no_use_loss = use_loss
+                        
+
+
+
+                # flow_loss += flow_criterion["mse_loss"].item()
                 flow_bpp += flow_criterion["bpp_loss"].item()
 
                 reconstruction_flow = recon_flow
-                recon_flow1 = recon_flow * max_edge
-                warping = run.backwarp(reconstruction_frame,recon_flow1)
-                warping = MC_net(reconstruction_frame, recon_flow, warping)
-                if (config.use_residual is True):
-                    if(epoch > 10):
-                        residual = example[:,i] - warping
-                        
-                        if(epoch > 20):                            
-                            res_out = res_AE(residual)
-                        else:
-                            res_out = res_AE(residual.detach())
-                        
-                        # compute estimate bits
-                        res_criterion = criterion1(res_out, residual)
-                        res_loss += res_criterion["mse_loss"].item()
-                        res_bpp += res_criterion["bpp_loss"].item()
-                        reconstruction_frame = warping+res_out["x_hat"]
-                        #reconstruction_frames[:,i] = reconstruction_frame
-
-
-
-        
-                # Loss terms 
-                # =======================================================================================================>>>                                                                    
                 
-                # Intra frame
-                #distortion = ((recon_residual_0-residual_0)**2).mean() + ((example[:,0]-rec_ori_frame_0)**2).mean()
                 
-                # Inter frame
-                #distortion += ((recon_residual_1-residual_1)**2).mean() + ((example[:,1]-rec_ori_frame_1)**2).mean() + ((flow-recon_flow)**2).mean()
-                if(epoch <= 10):
-                    distortion += flow_criterion["loss"]
-                elif(epoch > 10 and epoch <= 20):
-                    distortion += res_criterion["loss"]
-                else:
-                    #distortion += res_criterion["loss"] + vgg_loss(reconstruction_frame, example[:,i]) * config.lambda_X + flow_criterion["loss"]
-                    distortion += res_criterion["loss"] + flow_criterion["loss"]
-            distortion_penalty = distortion
+                res_loss += res_criterion["mse_loss"].item()
+                res_bpp += res_criterion["bpp_loss"].item()
+                reconstruction_frame = res_out["x_hat"]
+
+
+                distortion += ((res_criterion["loss"] + flow_criterion["bpp_loss"]))
+                
             
-            G_loss = distortion_penalty
+            G_loss = distortion
             G_loss.backward()
-            
-            if(epoch <= 10):
-                flow_aux_loss = flow_AE.aux_loss()
-                flow_aux_loss += opt_res_AE.aux_loss()
-                flow_aux_loss.backward()
-            elif(epoch > 10 and epoch <= 20):
-                res_aux_loss = res_AE.aux_loss()
-                res_aux_loss.backward()
-            else:
-                flow_aux_loss = opt_res_AE.aux_loss()
-                res_aux_loss = res_AE.aux_loss()
-                res_aux_loss.backward()
-                flow_aux_loss += flow_AE.aux_loss()
-                flow_aux_loss.backward()
+                                    
+            res_aux_loss = res_AE.aux_loss()
+            res_aux_loss.backward()
+            flow_aux_loss = opt_res_AE.aux_loss()
+            flow_aux_loss += flow_AE.aux_loss()
+            flow_aux_loss.backward()
             
             # torch.nn.utils.clip_grad_norm_(flow_AE.parameters(), 0.1)
             # torch.nn.utils.clip_grad_norm_(res_AE.parameters(), 0.1)

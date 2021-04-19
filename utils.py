@@ -854,20 +854,29 @@ def sample_test_real_bpp(flow_AE, res_AE, MC_net, example, ori_frames, config, n
         return reconstruction_frames.cpu().numpy(), ori_frames.cpu().numpy(), (estimate_bpp).item(), (actual_feature_bits).item(), est_flow_bits.item(), est_res_bits.item()
 
 
-def diff_forward(i, max_edge, use_diff, flow, reconstruction_flow, example, criterion, flow_AE, opt_res_AE, MC_net, res_AE):
+def diff_forward(i, max_edge, use_diff, use_block, flow, reconstruction_flow, example, reconstruction_frame, criterion, flow_AE, opt_res_AE, MC_net, res_AE):
     
     flow = (flow)/max_edge
-    if use_diff is False:
-        flow_out = flow_AE(flow)
-        recon_flow = flow_out["x_hat"]
-    else:
+    if use_block is True:
+        avg_pool = torch.nn.AvgPool2d(2, stride=2)
+        up_pool = torch.nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        flow = avg_pool(flow)
+        reconstruction_flow = avg_pool(reconstruction_flow)
+
+    if use_diff is True:
         flow_res = flow - reconstruction_flow
         flow_out = opt_res_AE(flow_res)
         recon_flow = flow_out["x_hat"] + reconstruction_flow
-    
+    else:        
+        flow_out = flow_AE(flow)
+        recon_flow = flow_out["x_hat"]
+
+    if use_block is True:
+        recon_flow = up_pool(recon_flow)
+
     recon_flow1 = recon_flow * max_edge
-    warping = run.backwarp(example[:,i-1], recon_flow1)
-    warping = MC_net(example[:,i-1], recon_flow, warping)
+    warping = run.backwarp(reconstruction_frame, recon_flow1)
+    warping = MC_net(reconstruction_frame, recon_flow, warping)
     flow_out["x_hat"] = warping
     flow_criterion = criterion(flow_out, example[:,i]) 
 
@@ -899,7 +908,7 @@ def sample_test_diff_fusion(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_fr
     est_flow_bits = 0
     est_res_bits = 0
     reconstruction_frames = torch.zeros((config.batch_size, config.nb_frame,3,config.img_col,config.img_row)).cuda()
-    reconstruction_flow = torch.zeros((config.batch_size, config.nb_frame, 2, config.img_col, config.img_row)).cuda()  
+    reconstruction_flow = torch.zeros((config.batch_size, 2, config.img_col, config.img_row)).cuda()  
     #ori_flows = torch.zeros((config.batch_size, config.nb_frame,2,config.img_col,config.img_row)).cuda()
     #recon_flows = torch.zeros((config.batch_size, config.nb_frame,2,config.img_col,config.img_row)).cuda()
     # warping_oris = torch.zeros((config.batch_size, config.nb_frame,3,config.img_col,config.img_row)).cuda()
@@ -918,10 +927,10 @@ def sample_test_diff_fusion(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_fr
             # input B C H W, output B 2 H W
             reconstruction_frames[:,i] = example[:,i]
             flow = run.estimate(example[:,i], example[:,i-1])
-            recon_flow, res_criterion, flow_criterion, res_out = diff_forward(i, max_edge, False, flow, reconstruction_flow, reconstruction_frames, criterion1, flow_AE, opt_res_AE, MC_net, res_AE)
+            recon_flow, res_criterion, flow_criterion, res_out = diff_forward(i, max_edge, False, False, flow, reconstruction_flow, reconstruction_frames, criterion1, flow_AE, opt_res_AE, MC_net, res_AE)
             
             if i > 1 and config.use_flow_residual is True:
-                recon_flow_diff, res_criterion_diff, flow_criterion_diff, res_out_diff = diff_forward(i, max_edge, True, flow, reconstruction_flow, reconstruction_frames, criterion1, flow_AE, opt_res_AE, MC_net, res_AE)
+                recon_flow_diff, res_criterion_diff, flow_criterion_diff, res_out_diff = diff_forward(i, max_edge, True, False, flow, reconstruction_flow, reconstruction_frames, criterion1, flow_AE, opt_res_AE, MC_net, res_AE)
                 no_use_loss = ((res_criterion["loss"].item() + flow_criterion["bpp_loss"].item()))
                 use_loss = ((res_criterion_diff["loss"].item() + flow_criterion_diff["bpp_loss"].item()))
                 
@@ -945,6 +954,122 @@ def sample_test_diff_fusion(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_fr
         print("Estimate bits: ", (estimate_bpp/(config.nb_frame-1)).item())
         print("Actual bits: ", (actual_feature_bits.item() / (config.nb_frame-1)))
         print("use:no use", str(use), str(no_use))
+        
+        reconstruction_frames = reconstruction_frames.cpu().numpy()
+        example = example.cpu().numpy()        
+        os.makedirs("videos/%s" % name, exist_ok=True)
+        if test == True:
+            os.makedirs("videos/%s/test" % name, exist_ok=True)
+            videoWriter = cv2.VideoWriter("videos/%s/test/%s.avi" % (name, video_name),fourcc, 25.0, (config.img_row*3, config.img_col), isColor=1)
+        else:
+            videoWriter = cv2.VideoWriter("videos/%s/%d.avi" % (name, epoch),fourcc, 25.0, (config.img_row*2, config.img_col), isColor=1)
+        for i in range(config.nb_frame):
+            frame = np.append(example[0][i],reconstruction_frames[0][i], axis = 2)            
+            frame = np.transpose(frame, (1,2,0))
+            frame = frame * 255
+            frame = np.uint8(cv2.cvtColor(frame,cv2.COLOR_RGB2BGR))
+            videoWriter.write(frame)
+            cv2.imwrite("videos/%s/"% (name)+str(i)+".png" ,frame)
+
+        videoWriter.release()
+    else:
+        return reconstruction_frames.cpu().numpy(), ori_frames.cpu().numpy(), (estimate_bpp).item(), (actual_feature_bits).item(), est_flow_bits, est_res_bits, use, no_use
+
+def sample_test_diff_block(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_frames, config, name=None, epoch=None, test=False, video_name=None):
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+
+    flow_AE.eval()
+    MC_net.eval()
+    res_AE.eval()
+    if opt_res_AE is not None:
+        opt_res_AE.eval()
+    # num_pixels = config.batch_size * config.img_col * config.img_row
+    # nb_frame = ori_frames.shape[1]
+    max_edge = max(config.img_row, config.img_col)
+    criterion1 = network.RateDistortionLoss(lmbda=config.lambda_X, lmbda_bpp=config.lambda_bpp).cuda()
+
+    estimate_bpp = torch.tensor(0.0).cuda()
+    actual_feature_bits = torch.tensor(0.0).cuda()
+    est_flow_bits = 0
+    est_res_bits = 0
+    reconstruction_frames = torch.zeros((config.batch_size, config.nb_frame,3,config.img_col,config.img_row)).cuda()
+    reconstruction_flow = torch.zeros((config.batch_size, 2, config.img_col, config.img_row)).cuda()     
+    reconstruction_frames[:,0] = example[:,0]
+    with torch.no_grad():
+        # Inter frame 
+        # =======================================================================================================>>>
+        use = 0
+        method_list = []
+        for i in range(1,config.nb_frame):
+            # input B C H W, output B 2 H W
+            reconstruction_frames[:,i] = example[:,i]
+            flow = run.estimate(example[:,i], example[:,i-1])
+            use = 0
+            recon_flow, res_criterion, flow_criterion, res_out = diff_forward(
+                i, max_edge, False, False, flow, 
+                reconstruction_flow, example, reconstruction_frames[:,i-1], criterion1, 
+                flow_AE, opt_res_AE, MC_net, res_AE
+            )
+            no_use_loss = ((res_criterion["loss"].item() + flow_criterion["bpp_loss"].item()))
+            if config.use_block is True:
+                recon_flow_block, res_criterion_block, flow_criterion_block, res_out_block = diff_forward(
+                    i, max_edge, False, True, flow,
+                        reconstruction_flow, example, reconstruction_frames[:,i-1], criterion1, 
+                        flow_AE, opt_res_AE, MC_net, res_AE
+                )
+                
+                use_loss = ((res_criterion_block["loss"].item() + flow_criterion_block["bpp_loss"].item()))
+                if no_use_loss > use_loss:
+                    res_criterion = res_criterion_block
+                    flow_criterion = flow_criterion_block
+                    recon_flow = recon_flow_block
+                    res_out = res_out_block
+                    no_use_loss = use_loss
+                    use = 1
+                        
+
+            if i > 1 and config.use_flow_residual is True:
+                recon_flow_diff, res_criterion_diff, flow_criterion_diff, res_out_diff = diff_forward(
+                    i, max_edge, True, False, flow,
+                        reconstruction_flow, example, reconstruction_frames[:,i-1], criterion1, 
+                        flow_AE, opt_res_AE, MC_net, res_AE
+                )
+                use_loss = ((res_criterion_diff["loss"].item() + flow_criterion_diff["bpp_loss"].item()))
+                if no_use_loss > use_loss:
+                    res_criterion = res_criterion_diff
+                    flow_criterion = flow_criterion_diff
+                    recon_flow = recon_flow_diff
+                    res_out = res_out_diff
+                    no_use_loss = use_loss
+                    use = 2
+                
+                if config.use_block is True:
+                    recon_flow_diff_block, res_criterion_diff_block, flow_criterion_diff_block, res_out_diff_block = diff_forward(
+                        i, max_edge, True, True, flow,
+                        reconstruction_flow, example, reconstruction_frames[:,i-1], criterion1, 
+                        flow_AE, opt_res_AE, MC_net, res_AE
+                    )
+                    use_loss = ((res_criterion_diff_block["loss"].item() + flow_criterion_diff_block["bpp_loss"].item()))
+                    if no_use_loss > use_loss:
+                        res_criterion = res_criterion_diff_block
+                        flow_criterion = flow_criterion_diff_block
+                        recon_flow = recon_flow_diff_block
+                        res_out = res_out_diff_block
+                        no_use_loss = use_loss
+                        use = 3
+                    
+            estimate_bpp += flow_criterion["bpp_loss"].item() 
+            est_flow_bits += flow_criterion["bpp_loss"].item() 
+            estimate_bpp += res_criterion["bpp_loss"].item()
+            est_res_bits += res_criterion["bpp_loss"].item()
+            reconstruction_flow = recon_flow
+            reconstruction_frames[:,i] = res_out["x_hat"].clamp(0,1)
+            method_list.append(use)
+
+    if epoch is not None:
+        print("Estimate bits: ", (estimate_bpp/(config.nb_frame-1)).item())
+        print("Actual bits: ", (actual_feature_bits.item() / (config.nb_frame-1)))
+        print("method_list", method_list)
         
         reconstruction_frames = reconstruction_frames.cpu().numpy()
         example = example.cpu().numpy()        
