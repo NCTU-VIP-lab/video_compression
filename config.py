@@ -23,7 +23,7 @@ class config_train(object):
     using_ema = False
 
     # Compression
-    lambda_X = 200
+    lambda_X = 1000
     lambda_bpp = 0.4
     channel_bottleneck = 48
     sample_noise = False
@@ -63,7 +63,7 @@ class config_test(object):
     diagnostic_steps = 64
 
     # Compression
-    lambda_X = 200
+    lambda_X = 1000
     lambda_bpp = 0.4
     channel_bottleneck = 48
     sample_noise = False

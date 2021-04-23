@@ -113,6 +113,7 @@ def main(**kwargs):
         os.makedirs("videos/%s/test" % args.name, exist_ok=True)
         videoWriter = cv2.VideoWriter("videos/%s/test/%s.avi" % (args.name, video_n),fourcc, 25.0, (config_test.img_row*2, config_test.img_col), isColor=1)
         print("total frames: ", total_frames)
+        method_list = [0, 0, 0, 0]
         for j in range(iteration):
 
             
@@ -136,13 +137,16 @@ def main(**kwargs):
             tmp_frames = tmp_frames.view(-1, config_test.nb_frame, frames.shape[1], frames.shape[2], frames.shape[3]).cuda()
             tmp_ori = tmp_ori.view(-1, config_test.nb_frame, frames.shape[1], frames.shape[2], frames.shape[3]).cuda()
 
-            reconstruction_frames, example, clip_bpp, clip_actual_bits, clip_flow_bits, clip_res_bits, use, no_use = utils.sample_test_diff_fusion(flow_AE, res_AE, MC_net, opt_res_AE, tmp_frames, tmp_ori, config_test, args.name)
+            reconstruction_frames, example, clip_bpp, clip_actual_bits, clip_flow_bits, clip_res_bits, methods = utils.sample_test_diff_block(flow_AE, res_AE, MC_net, opt_res_AE, tmp_frames, tmp_ori, config_test, args.name)
             total_bpp += clip_bpp
             actual_bits += clip_actual_bits
             res_bpp += clip_res_bits
             flow_bpp += clip_flow_bits
-            uses += use
-            no_uses += no_use
+            #uses += use
+            #no_uses += no_use
+            for i in range(4):
+                method_list[i] += methods[i]
+            
             for i in range(config_test.nb_frame):
                 frame = np.append(example[0][i],reconstruction_frames[0][i], axis = 2)
                 frame = np.transpose(frame, (1,2,0))
@@ -158,15 +162,16 @@ def main(**kwargs):
         print(" Total bpp: ", total_bpp/total_frames)
         # print(" Total actual bpp: ", actual_bits/total_frames)
         print(" Intra bpp: ", intra_bpp/iteration)
-        print(" Residual bpp: ", res_bpp/(total_frames))
-        print(" Flow bpp: ", flow_bpp/(total_frames))
-        print(" Use : No Use ", str(uses), str(no_uses))
+        print(" Residual bpp: ", res_bpp/(total_frames-iteration))
+        print(" Flow bpp: ", flow_bpp/(total_frames-iteration))
+        #print(" Use : No Use ", str(uses), str(no_uses))
+        print("Method:", method_list)
 
         avg_total_bpp += total_bpp / total_frames
         avg_intra_bpp += intra_bpp / iteration
         # avg_actual_bits += actual_bits / total_frames
-        avg_flow_bpp += flow_bpp / (total_frames)
-        avg_res_bpp += res_bpp / (total_frames)
+        avg_flow_bpp += flow_bpp / (total_frames-iteration)
+        avg_res_bpp += res_bpp / (total_frames-iteration)
 
         frames = None
         videoWriter.release()

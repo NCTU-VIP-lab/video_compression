@@ -879,6 +879,7 @@ def diff_forward(i, max_edge, use_diff, use_block, flow, reconstruction_flow, ex
     warping = MC_net(reconstruction_frame, recon_flow, warping)
     flow_out["x_hat"] = warping
     flow_criterion = criterion(flow_out, example[:,i]) 
+    
 
     residual = example[:,i] - warping                                                                          
     res_out = res_AE(residual)
@@ -999,7 +1000,7 @@ def sample_test_diff_block(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_fra
         # Inter frame 
         # =======================================================================================================>>>
         use = 0
-        method_list = []
+        method_list = [0, 0, 0, 0]
         for i in range(1,config.nb_frame):
             # input B C H W, output B 2 H W
             reconstruction_frames[:,i] = example[:,i]
@@ -1010,7 +1011,8 @@ def sample_test_diff_block(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_fra
                 reconstruction_flow, example, reconstruction_frames[:,i-1], criterion1, 
                 flow_AE, opt_res_AE, MC_net, res_AE
             )
-            no_use_loss = ((res_criterion["loss"].item() + flow_criterion["bpp_loss"].item()))
+            # no_use_loss = ((res_criterion["loss"].item() + flow_criterion["bpp_loss"].item()))
+            no_use_loss = res_criterion["loss"].item()
             if config.use_block is True:
                 recon_flow_block, res_criterion_block, flow_criterion_block, res_out_block = diff_forward(
                     i, max_edge, False, True, flow,
@@ -1018,7 +1020,8 @@ def sample_test_diff_block(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_fra
                         flow_AE, opt_res_AE, MC_net, res_AE
                 )
                 
-                use_loss = ((res_criterion_block["loss"].item() + flow_criterion_block["bpp_loss"].item()))
+                # use_loss = ((res_criterion_block["loss"].item() + flow_criterion_block["bpp_loss"].item()))
+                use_loss = res_criterion_block["loss"].item()
                 if no_use_loss > use_loss:
                     res_criterion = res_criterion_block
                     flow_criterion = flow_criterion_block
@@ -1034,7 +1037,8 @@ def sample_test_diff_block(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_fra
                         reconstruction_flow, example, reconstruction_frames[:,i-1], criterion1, 
                         flow_AE, opt_res_AE, MC_net, res_AE
                 )
-                use_loss = ((res_criterion_diff["loss"].item() + flow_criterion_diff["bpp_loss"].item()))
+                # use_loss = ((res_criterion_diff["loss"].item() + flow_criterion_diff["bpp_loss"].item()))
+                use_loss = res_criterion_diff["loss"].item()
                 if no_use_loss > use_loss:
                     res_criterion = res_criterion_diff
                     flow_criterion = flow_criterion_diff
@@ -1049,7 +1053,8 @@ def sample_test_diff_block(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_fra
                         reconstruction_flow, example, reconstruction_frames[:,i-1], criterion1, 
                         flow_AE, opt_res_AE, MC_net, res_AE
                     )
-                    use_loss = ((res_criterion_diff_block["loss"].item() + flow_criterion_diff_block["bpp_loss"].item()))
+                    # use_loss = ((res_criterion_diff_block["loss"].item() + flow_criterion_diff_block["bpp_loss"].item()))
+                    use_loss = res_criterion_diff_block["loss"].item()
                     if no_use_loss > use_loss:
                         res_criterion = res_criterion_diff_block
                         flow_criterion = flow_criterion_diff_block
@@ -1057,14 +1062,14 @@ def sample_test_diff_block(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_fra
                         res_out = res_out_diff_block
                         no_use_loss = use_loss
                         use = 3
-                    
+            
             estimate_bpp += flow_criterion["bpp_loss"].item() 
             est_flow_bits += flow_criterion["bpp_loss"].item() 
             estimate_bpp += res_criterion["bpp_loss"].item()
             est_res_bits += res_criterion["bpp_loss"].item()
             reconstruction_flow = recon_flow
             reconstruction_frames[:,i] = res_out["x_hat"].clamp(0,1)
-            method_list.append(use)
+            method_list[use] += 1
 
     if epoch is not None:
         print("Estimate bits: ", (estimate_bpp/(config.nb_frame-1)).item())
@@ -1089,7 +1094,7 @@ def sample_test_diff_block(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_fra
 
         videoWriter.release()
     else:
-        return reconstruction_frames.cpu().numpy(), ori_frames.cpu().numpy(), (estimate_bpp).item(), (actual_feature_bits).item(), est_flow_bits, est_res_bits, use, no_use
+        return reconstruction_frames.cpu().numpy(), ori_frames.cpu().numpy(), (estimate_bpp).item(), (actual_feature_bits).item(), est_flow_bits, est_res_bits, method_list
 
 
 
