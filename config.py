@@ -8,7 +8,7 @@ class config_train(object):
 
     #20 train normal
     #28 train residual
-    batch_size = 5
+    batch_size = 7
     ema_decay = 0.999
     G_learning_rate = 5e-5
     D_learning_rate = 5e-5
@@ -23,7 +23,7 @@ class config_train(object):
     using_ema = False
 
     # Compression
-    lambda_X = 1000
+    lambda_X = 200
     lambda_bpp = 0.4
     channel_bottleneck = 48
     sample_noise = False
@@ -43,7 +43,7 @@ class config_train(object):
     use_residual = True
     res_late_start = 0
     use_msssim = False
-    use_flow_residual = True
+    use_flow_residual = False
     use_block = True
 
 
@@ -63,7 +63,7 @@ class config_test(object):
     diagnostic_steps = 64
 
     # Compression
-    lambda_X = 1000
+    lambda_X = 200
     lambda_bpp = 0.4
     channel_bottleneck = 48
     sample_noise = False
@@ -75,7 +75,7 @@ class config_test(object):
     nb_frame = 15
     img_row = 1920
     img_col = 1024
-    use_flow_residual = True
+    use_flow_residual = False
     use_block = True
 
 

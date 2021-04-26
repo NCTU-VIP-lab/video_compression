@@ -68,6 +68,8 @@ def trainIter(config, args):
     
     # ======================================================================
     writer = SummaryWriter('tensorboard/'+args.name)
+    os.makedirs("videos/%s" % args.name, exist_ok=True)
+    os.makedirs("videos/%s/test" % args.name, exist_ok=True)
     iteration = 0
     training_phase = torch.tensor(True, dtype=torch.bool, requires_grad=False)
     
