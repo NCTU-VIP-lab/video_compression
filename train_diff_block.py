@@ -80,7 +80,8 @@ def trainIter(config, args):
     
 
     res_AE = Cheng2020Attention_fix(N = config.channel_bottleneck, in_channel = 3).cuda()
-    criterion1 = RateDistortionLoss(lmbda=config.lambda_X, lmbda_bpp=config.lambda_bpp).cuda()
+    # criterion1 = RateDistortionLoss(lmbda=config.lambda_X, lmbda_bpp=config.lambda_bpp).cuda()
+    criterion1 = RateDistortionLossMSSSIM(lmbda=config.lambda_X, lmbda_bpp=config.lambda_bpp, mode=config.mode).cuda()
 
     if config.use_2D_D is True:
         discriminator = network.Discriminator(config, 3, 1).cuda()
@@ -259,12 +260,10 @@ def trainIter(config, args):
                 flow_bpp += flow_criterion["bpp_loss"].item()
 
                 reconstruction_flow = recon_flow
-                
-                
+                                
                 res_loss += res_criterion["mse_loss"].item()
                 res_bpp += res_criterion["bpp_loss"].item()
                 reconstruction_frame = res_out["x_hat"]
-
 
                 distortion += ((res_criterion["loss"] + flow_criterion["bpp_loss"]))
                 

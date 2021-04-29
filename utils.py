@@ -20,6 +20,8 @@ import network
 import cv2
 import hyperprior
 from pathlib import Path
+from PIL import Image
+
 from pytorch_spynet import run
 
 def filesize(filepath: str) -> int:
@@ -1096,6 +1098,194 @@ def sample_test_diff_block(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_fra
     else:
         return reconstruction_frames.cpu().numpy(), ori_frames.cpu().numpy(), (estimate_bpp).item(), (actual_feature_bits).item(), est_flow_bits, est_res_bits, method_list
 
+def bidir_forward(config, epoch, start, end, mid, example, reconstruction_frame_start, reconstruction_frame_end, max_edge, flow_AE, criterion1, MC_net, res_AE, opt_res_AE, reconstruction_flows):
+    # input B C H W, output B 2 H W
+    
+    flow_start_mid = run.estimate(example[:,mid], example[:,start]) / max_edge
+    flow_end_mid = run.estimate(example[:,mid], example[:,end]) / max_edge
+    flow_shape = (flow_start_mid.shape)
+    # print(len(reconstruction_flows))
+    if len(reconstruction_flows) == 0 or config.use_flow_residual is False:
+        flow_out_start_mid = flow_AE(flow_start_mid)
+        flow_out_end_mid = flow_AE(flow_end_mid)
+        
+    else:        
+        pick_flow_start = torch.zeros((flow_shape[0], 2, config.img_col, config.img_row)).cuda()
+        pick_flow_end = torch.zeros((flow_shape[0], 2, config.img_col, config.img_row)).cuda()
+
+        for i in range(flow_shape[0]):#batch size
+            min_start_mse = 99999
+            min_end_mse = 99999
+            for j in range(len(reconstruction_flows)):
+                f = reconstruction_flows[j][i]                     
+                _start_mse = (flow_start_mid[i]-f).norm(2)
+                _end_mse = (flow_end_mid[i]-f).norm(2)
+                if(_start_mse<min_start_mse):
+                    close_flow_start = f
+                    min_start_mse = _start_mse
+
+                if(_end_mse<min_end_mse):
+                    close_flow_end = f
+                    min_end_mse = _end_mse                    
+
+            pick_flow_start[i] = close_flow_start
+            pick_flow_end[i] = close_flow_end
+
+        flow_start_res = flow_start_mid - pick_flow_start
+        flow_out_start_mid = opt_res_AE(flow_start_res)
+        flow_out_start_mid["x_hat"] = flow_out_start_mid["x_hat"] + pick_flow_start
+
+        flow_end_res = flow_end_mid - pick_flow_end
+        flow_out_end_mid = opt_res_AE(flow_end_res)
+        flow_out_end_mid["x_hat"] = flow_out_end_mid["x_hat"] + pick_flow_end        
+        
+    recon_flow_start_mid = flow_out_start_mid["x_hat"]
+    recon_flow_end_mid = flow_out_end_mid["x_hat"]
+
+    reconstruction_flows.append(recon_flow_start_mid)
+    reconstruction_flows.append(recon_flow_end_mid)
+
+    flow_criterion_start_mid = criterion1(flow_out_start_mid, flow_start_mid)
+    flow_criterion_end_mid = criterion1(flow_out_end_mid, flow_end_mid)
+    
+    
+    recon_flow1_start_mid = recon_flow_start_mid * max_edge
+    recon_flow1_end_mid = recon_flow_end_mid * max_edge
+
+    warping_start_mid = run.backwarp(reconstruction_frame_start,recon_flow1_start_mid)
+    warping_end_mid = run.backwarp(reconstruction_frame_end,recon_flow1_end_mid)
+
+    warping_mid = MC_net(reconstruction_frame_start, reconstruction_frame_end, recon_flow_start_mid, recon_flow_end_mid, warping_start_mid, warping_end_mid)
+
+    if (config.use_residual is True):
+        if(epoch > 10):
+            residual = example[:,mid] - warping_mid
+            
+            if(epoch > 20):                            
+                res_out = res_AE(residual)
+            else:
+                res_out = res_AE(residual.detach())
+            
+            # compute estimate bits
+            res_criterion = criterion1(res_out, residual)
+            
+            reconstruction_frame = warping_mid+res_out["x_hat"]
+            #reconstruction_frames[:,i] = reconstruction_frame
+    
+    if(epoch <= 10):
+        return flow_criterion_start_mid, flow_criterion_end_mid, reconstruction_flows
+    else:
+        return reconstruction_frame, flow_criterion_start_mid, flow_criterion_end_mid, res_criterion, reconstruction_flows
+
+def sample_test_bidir(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_frames, config, index, max_edge, criterion1, name=None, epoch=None, test=False, video_name=None):
+
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    #fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    flow_AE.eval()
+    MC_net.eval()
+    res_AE.eval()
+    if opt_res_AE is not None:
+        opt_res_AE.eval()
+    
+    num_pixels = config.batch_size * config.img_col * config.img_row
+    nb_frame = ori_frames.shape[1]
+    max_edge = max(config.img_row, config.img_col)
+    
+    estimate_flow_bpp = torch.tensor(0.0).cuda()
+    estimate_res_bpp = torch.tensor(0.0).cuda()
+    intra_bpp = torch.tensor(0.0).cuda()
+    actual_feature_bits = torch.tensor(0.0).cuda()
+    reconstruction_frames = torch.zeros((config.batch_size, config.nb_frame,3,config.img_col,config.img_row)).cuda()
+    #ori_flows = torch.zeros((config.batch_size, config.nb_frame,2,config.img_col,config.img_row)).cuda()
+    #recon_flows = torch.zeros((config.batch_size, config.nb_frame,2,config.img_col,config.img_row)).cuda()
+    warping_oris = torch.zeros((config.batch_size, config.nb_frame,3,config.img_col,config.img_row)).cuda()
+    warpings = torch.zeros((config.batch_size, config.nb_frame,3,config.img_col,config.img_row)).cuda()
+    ori_residuals = torch.zeros((config.batch_size, config.nb_frame,3,config.img_col,config.img_row)).cuda()
+    residuals = torch.zeros((config.batch_size, config.nb_frame,3,config.img_col,config.img_row)).cuda()
+    recon_residuals = torch.zeros((config.batch_size, config.nb_frame,3,config.img_col,config.img_row)).cuda()
+    #reconstruction_frames[:,0] = example[:,0]
+    
+    #use bpg to compress first and last frame
+    start, end = index[0]
+    transfor = transforms.Compose([transforms.ToTensor()])
+    I_QP = 37 #[22, 27, 32, 37]
+    
+    Y0_raw = example[0][start]
+    save_image(Y0_raw, "./raw.png")
+    os.system('bpgenc -f 444 -m 9 ' + "./raw.png -o ./out.bin -q" + str(I_QP))
+    os.system('bpgdec ./out.bin -o ./out.png')
+    Y0_com = transfor(Image.open("./out.png"))
+
+    Y1_raw = example[0][end]
+    save_image(Y1_raw, "./raw.png")
+    os.system('bpgenc -f 444 -m 9 ' + "./raw.png -o ./out.bin -q" + str(I_QP))
+    os.system('bpgdec ./out.bin -o ./out.png')
+    Y1_com = transfor(Image.open("./out.png"))
+
+    reconstruction_frames = {index[0][0]:torch.unsqueeze(Y0_com, 0).cuda(),
+                             index[0][1]:torch.unsqueeze(Y1_com, 0).cuda()
+            }
+
+    size = filesize("./out.bin")        
+    #estimate_bpp += (float(size) * 8 / (Y0_com.shape[1] * Y0_com.shape[2]))
+    intra_bpp += (float(size) * 8 / (Y0_com.shape[1] * Y0_com.shape[2])) + (float(size) * 8 / (Y1_com.shape[1] * Y1_com.shape[2]))
+    
+
+    with torch.no_grad():
+        # Inter frame 
+        # =======================================================================================================>>>
+        reconstruction_flows = []
+        for i in range(len(index)):
+            start, end = index[i]
+            mid = int((start + end) / 2)
+            reconstruction_frame_start = reconstruction_frames[start]
+            reconstruction_frame_end = reconstruction_frames[end]
+            reconstruction_frames[mid], flow_criterion_start_mid, flow_criterion_end_mid, res_criterion, reconstruction_flows = bidir_forward(config, 11, start, end, mid, example[0:1], reconstruction_frame_start, reconstruction_frame_end, max_edge, flow_AE, criterion1, MC_net, res_AE, opt_res_AE, reconstruction_flows)
+            estimate_flow_bpp += flow_criterion_start_mid["bpp_loss"].item() + flow_criterion_end_mid["bpp_loss"].item()
+            estimate_res_bpp += res_criterion["bpp_loss"].item()
+            reconstruction_frames[mid] = reconstruction_frames[mid].clamp(0,1)
+
+            
+
+    if epoch is not None:
+        print("Estimate flow bits: ", (estimate_flow_bpp/(config.nb_frame-2)).item())
+        print("Estimate res bits: ", (estimate_res_bpp/(config.nb_frame-2)).item())
+        print("Intra bits: ", intra_bpp.item()/2)
+        print("Actual bits: ", (actual_feature_bits.item() / config.nb_frame))
+        
+        
+        
+        ori_frames = ori_frames.cpu().numpy()
+        #recon_flows = recon_flows.cpu().numpy()
+        #ori_flows = ori_flows.cpu().numpy()
+        #warping_oris = warping_oris.cpu().numpy()
+        #warpings = warpings.cpu().numpy()
+        #ori_residuals = ori_residuals.cpu().numpy()
+        #residuals = residuals.cpu().numpy()
+        #recon_residuals = recon_residuals.cpu().numpy()
+        os.makedirs("videos/%s" % name, exist_ok=True)
+        if test == True:
+            os.makedirs("videos/%s/test" % name, exist_ok=True)
+            videoWriter = cv2.VideoWriter("videos/%s/test/%s.avi" % (name, video_name),fourcc, 25.0, (config.img_row*2, config.img_col), isColor=1)
+        else:
+            videoWriter = cv2.VideoWriter("videos/%s/%d.avi" % (name, epoch),fourcc, 25.0, (config.img_row*2, config.img_col), isColor=1)
+        for i in range(config.nb_frame):
+            frame = np.append(ori_frames[0][i],reconstruction_frames[i].cpu().numpy()[0], axis = 2)
+            #frame = np.append(frame,warping_oris[0][i], axis = 2)
+            #frame = np.append(frame,warpings[0][i], axis = 2)
+            #frame = np.append(frame,(warpings[0][i]-warping_oris[0][i]) * 0.5 + 0.5, axis = 2)
+            #frame = np.append(frame,ori_residuals[0][i], axis = 2)
+            #frame = np.append(frame,residuals[0][i], axis = 2)
+            #frame = np.append(frame,(recon_residuals[0][i]-residuals[0][i]) * 0.5 + 0.5, axis = 2)
+            frame = np.transpose(frame, (1,2,0))
+            frame = frame * 255
+            frame = np.uint8(cv2.cvtColor(frame,cv2.COLOR_RGB2BGR))
+            videoWriter.write(frame)
+            cv2.imwrite("videos/%s/"% (name)+str(i)+".png" ,frame)
+
+        videoWriter.release()
+    else:
+        return reconstruction_frames, ori_frames.cpu().numpy(), estimate_flow_bpp.item(), estimate_res_bpp.item(), intra_bpp.item()/2, actual_feature_bits.item()
 
 
 def adjust_learning_rate(optimizers, epoch, config):

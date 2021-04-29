@@ -20,6 +20,82 @@ from compressai.layers import (
     GDN
 )
 
+class MotionCompensationNet_bidir(nn.Module):
+    def __init__(self, input_size=8, output_size=3, channel=64):
+        super(MotionCompensationNet_bidir, self).__init__()
+
+        
+        class Res_block(nn.Module):
+            def __init__(self, input_size, output_size, kernel_size=3):
+                super(Res_block, self).__init__()
+                self.skip = None
+                p = int((kernel_size - 1) / 2)
+                
+                self.conv_block = nn.Sequential(
+                    nn.ReLU(),
+                    nn.ReflectionPad2d((p,p,p,p)),
+                    nn.Conv2d(in_channels=input_size, out_channels=output_size, kernel_size=kernel_size, stride=1),
+                    nn.ReLU(True),
+                    nn.ReflectionPad2d((p,p,p,p)),
+                    nn.Conv2d(in_channels=output_size, out_channels=output_size, kernel_size=kernel_size, stride=1),
+                    )
+                if(input_size != output_size):
+                    self.skip = nn.Conv2d(in_channels=input_size, out_channels=output_size, kernel_size=kernel_size, stride=1)
+                
+            def forward(self, x):
+                identity_map = x
+                res = self.conv_block(x)
+                if(self.skip != None):
+                    identity_map = self.skip(identity_map)
+                out = torch.add(res, identity_map)
+                return out
+        
+
+        self.conv1 = nn.Conv2d(input_size, channel, 3, 1, padding=1)
+        self.res_block1 = Res_block(channel,channel,3)
+        self.avg_pool1 = nn.AvgPool2d(kernel_size=2, stride=2, padding=0)
+        self.res_block2 = Res_block(channel,channel,3)
+        self.avg_pool2 = nn.AvgPool2d(kernel_size=2, stride=2, padding=0)
+        self.res_block3 = Res_block(channel,channel,3)
+
+        self.res_block4 = Res_block(channel,channel,3)
+        self.upsample1 = nn.Upsample(scale_factor=2, mode='nearest')
+        self.res_block5 = Res_block(channel,channel,3)
+        self.upsample2 = nn.Upsample(scale_factor=2, mode='nearest')
+        self.res_block6 = Res_block(channel,channel,3)
+        self.conv2 = nn.Conv2d(channel, channel, 3, 1, padding=1)
+        self.relu1 = nn.ReLU()
+        self.conv3 = nn.Conv2d(channel, output_size, 3, 1, padding=1)
+
+
+    def forward(self, x1, x2, flow1, flow2, warping1, warping2):
+        out = torch.cat((x1, x2, flow1, flow2, warping1, warping2), 1) 
+        out = self.conv1(out)
+        out = self.res_block1(out)
+        
+        out1 = self.avg_pool1(out)
+        out1 = self.res_block2(out1)
+        
+        out2 = self.avg_pool2(out1)
+        out2 = self.res_block3(out2)
+
+        out2 = self.res_block4(out2)
+        out2 = self.upsample1(out2)
+        
+        out2 = out2 + out1
+        out2 = self.res_block5(out2)
+        out2 = self.upsample2(out2)
+        
+        out2 = out2 + out
+        out2 = self.res_block6(out2)
+        out2 = self.conv2(out2)
+        out2 = self.relu1(out2)
+        out2 = self.conv3(out2)
+
+
+        
+        return out2
+
 class MotionCompensationNet(nn.Module):
     def __init__(self, input_size=8, output_size=3, channel=64):
         super(MotionCompensationNet, self).__init__()
@@ -91,8 +167,6 @@ class MotionCompensationNet(nn.Module):
         out2 = self.conv2(out2)
         out2 = self.relu1(out2)
         out2 = self.conv3(out2)
-
-
         
         return out2
 
@@ -173,6 +247,34 @@ class RateDistortionLoss(nn.Module):
         )
         out["mse_loss"] = self.mse(output["x_hat"], target)
         out["loss"] = self.lmbda * out["mse_loss"] + self.lmbda_bpp * out["bpp_loss"]
+
+        return out
+
+class RateDistortionLossMSSSIM(nn.Module):
+    """Custom rate distortion loss with a Lagrangian parameter."""
+
+    def __init__(self, lmbda=1e-2, mode="psnr"):
+        super().__init__()
+        self.mse = nn.MSELoss()
+        self.lmbda = lmbda
+        self.mode = mode
+
+    def forward(self, output, target):
+        N, _, H, W = target.size()
+        out = {}
+        num_pixels = N * H * W
+        
+        out["bpp_loss"] = sum(
+            (torch.log(output["likelihoods"][likelihoods]).sum() / (-math.log(2) * num_pixels))
+            for likelihoods in output["likelihoods"]
+        )
+        if self.mode == "psnr":
+            out["distortion_loss"] = self.mse(output["x_hat"], target)
+            out["loss"] = self.lmbda * 255 ** 2 * out["distortion_loss"] + out["bpp_loss"]
+        else:
+            out["distortion_loss"] = ms_ssim(output["x_hat"], target, data_range=1)
+            out["loss"] = self.lmbda * (1 - out["distortion_loss"]) + out["bpp_loss"]
+        
 
         return out
 

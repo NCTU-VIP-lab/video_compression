@@ -2,13 +2,13 @@
 
 class config_train(object):
     mode = 'gan-train'
-    start_epoch = 0
-    num_epochs = 15
+    start_epoch = 31
+    num_epochs = 46
     state_iter = 5
 
     #20 train normal
     #28 train residual
-    batch_size = 7
+    batch_size = 8
     ema_decay = 0.999
     G_learning_rate = 5e-5
     D_learning_rate = 5e-5
@@ -29,11 +29,11 @@ class config_train(object):
     sample_noise = False
     use_vanilla_GAN = False
     use_feature_matching_loss = True
-    use_vgg_loss = True
+    use_vgg_loss = False
     #upsample_dim = 256
     upsample_dim = 256
     feature_matching_weight = 10
-    nb_frame = 6
+    nb_frame = 9
     # img_row = 320
     # img_col = 256
     img_row = 256
@@ -45,6 +45,7 @@ class config_train(object):
     use_msssim = False
     use_flow_residual = False
     use_block = True
+    mode = "psnr"
 
 
 class config_test(object):
@@ -72,7 +73,7 @@ class config_test(object):
     upsample_dim = 256
     multiscale = False
     feature_matching_weight = 10
-    nb_frame = 15
+    nb_frame = 8
     img_row = 1920
     img_col = 1024
     use_flow_residual = False
