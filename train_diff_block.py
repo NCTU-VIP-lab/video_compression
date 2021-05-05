@@ -143,7 +143,6 @@ def trainIter(config, args):
                     res_encoder, res_decoder, flow_encoder, flow_decoder, prior_encoder_inter, prior_decoder_inter, bit_estimator_inter, example, ori_frames, config, args.name, epoch)
                 """
                 utils.sample_test_diff_block(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_frames, config, args.name, epoch)
-                #utils.sample_test_api(flow_AE, res_AE, example, ori_frames, config, args.name, epoch)
             # ============
             # train G
             # ============
