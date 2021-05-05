@@ -2,7 +2,6 @@
 import torch
 import time, os, sys
 import argparse
-from tensorboardX import SummaryWriter
 import torchvision.transforms as transforms
 import numpy as np
 
@@ -29,45 +28,28 @@ torch.backends.cudnn.enbaled = True
 torch.autograd.set_detect_anomaly(True)
 
 def trainIter(config, args):
-
     start_time = time.time()
     G_loss_best, D_loss_best = float('inf'), float('inf')
 
     # Load data
     print('Training on dataset:', args.dataset)
-    print('Using GC')
     paths = Data.load_dataframe(directories.train)
 
     # >>> Data handling
-    std = [0.5, 0.5, 0.5]
-    mean = [0.5, 0.5, 0.5]
     img_row = config.img_row
     img_col = config.img_col
     max_edge = max(img_row, img_col)
 
-    ori_img_transformations = transforms.Compose([#transforms.Resize(size=(img_col, img_row)),
-                                                  #transforms.CenterCrop((img_col, img_row)),
-                                                  #transforms.RandomCrop((img_col, img_row)),
-                                                  #VT.RandomCropVideo((img_col, img_row)),
-                                                  transforms.ToTensor()])
-    
-    train_transformations = transforms.Compose([#transforms.Resize(size=(img_col, img_row)),
-                                                #transforms.CenterCrop((img_col, img_row)),
-                                                #transforms.RandomCrop((img_col, img_row)),
-                                                #VT.RandomCropVideo((img_col, img_row)),
-                                                transforms.ToTensor(),
-                                            #    transforms.Normalize(mean, std)
-                                               ])
+    train_transformations = transforms.Compose([transforms.ToTensor(),])
     train_dataset = Data(img_paths=paths,
                          config = config,
                          transforms=train_transformations,
-                         transforms_ori = ori_img_transformations,
+                         transforms_ori = train_transformations,
                          test = False
                          )
     train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=2, drop_last=True)
     
     # ======================================================================
-    writer = SummaryWriter('tensorboard/'+args.name)
     os.makedirs("videos/%s" % args.name, exist_ok=True)
     os.makedirs("videos/%s/test" % args.name, exist_ok=True)
     iteration = 0
@@ -75,13 +57,10 @@ def trainIter(config, args):
     
     flow_AE = Cheng2020Attention_fix(N = config.channel_bottleneck, in_channel = 2).cuda()
     opt_res_AE = Cheng2020Attention_fix(N = config.channel_bottleneck, in_channel = 2).cuda()
-
     MC_net = network.MotionCompensationNet(input_size = 8, output_size = 3, channel = 64).cuda()
-    
-
     res_AE = Cheng2020Attention_fix(N = config.channel_bottleneck, in_channel = 3).cuda()
-    criterion1 = RateDistortionLoss(lmbda=config.lambda_X, lmbda_bpp=config.lambda_bpp).cuda()
-    # criterion1 = RateDistortionLossMSSSIM(lmbda=config.lambda_X, lmbda_bpp=config.lambda_bpp, mode=config.mode).cuda()
+    criterion = RateDistortionLoss(lmbda=config.lambda_X, lmbda_bpp=config.lambda_bpp).cuda()
+    # criterion = RateDistortionLossMSSSIM(lmbda=config.lambda_X, lmbda_bpp=config.lambda_bpp, mode=config.mode).cuda()
 
     if args.restore_last:
         utils.load_weights_api(flow_AE, res_AE, MC_net, opt_res_AE, args.name)
@@ -172,9 +151,7 @@ def trainIter(config, args):
             for net in Opt_G_nets:
                 net.zero_grad()
 
-            reconstruction_frames = torch.zeros((config.batch_size, config.nb_frame,3,config.img_col,config.img_row)).cuda() 
             reconstruction_flow = torch.zeros((config.batch_size, 2, config.img_col, config.img_row)).cuda()   
-            #reconstruction_frames[:,0] = example[:,0]
             reconstruction_frame = example[:,0]
             distortion = 0
             flow_loss = 0
@@ -188,14 +165,14 @@ def trainIter(config, args):
                 flow = run.estimate(example[:,i], example[:,i-1]) / max_edge
                 recon_flow, res_criterion, flow_criterion, res_out = utils.diff_forward(
                     i, max_edge, False, False, flow, 
-                    reconstruction_flow, example, reconstruction_frame, criterion1, 
+                    reconstruction_flow, example, reconstruction_frame, criterion, 
                     flow_AE, opt_res_AE, MC_net, res_AE
                 )
                 no_use_loss = ((res_criterion["loss"].item() + flow_criterion["bpp_loss"].item()))
                 if config.use_block is True:
                     recon_flow_block, res_criterion_block, flow_criterion_block, res_out_block = utils.diff_forward(
                         i, max_edge, False, True, flow,
-                         reconstruction_flow, example, reconstruction_frame, criterion1, 
+                         reconstruction_flow, example, reconstruction_frame, criterion, 
                          flow_AE, opt_res_AE, MC_net, res_AE
                     )
                     
@@ -211,7 +188,7 @@ def trainIter(config, args):
                 if i > 1 and config.use_flow_residual is True:
                     recon_flow_diff, res_criterion_diff, flow_criterion_diff, res_out_diff = utils.diff_forward(
                         i, max_edge, True, False, flow,
-                         reconstruction_flow, example, reconstruction_frame, criterion1, 
+                         reconstruction_flow, example, reconstruction_frame, criterion, 
                          flow_AE, opt_res_AE, MC_net, res_AE
                     )
                     use_loss = ((res_criterion_diff["loss"].item() + flow_criterion_diff["bpp_loss"].item()))
@@ -225,7 +202,7 @@ def trainIter(config, args):
                     if config.use_block is True:
                         recon_flow_diff_block, res_criterion_diff_block, flow_criterion_diff_block, res_out_diff_block = utils.diff_forward(
                             i, max_edge, True, True, flow,
-                            reconstruction_flow, example, reconstruction_frame, criterion1, 
+                            reconstruction_flow, example, reconstruction_frame, criterion, 
                             flow_AE, opt_res_AE, MC_net, res_AE
                         )
                         use_loss = ((res_criterion_diff_block["loss"].item() + flow_criterion_diff_block["bpp_loss"].item()))
@@ -234,23 +211,14 @@ def trainIter(config, args):
                             flow_criterion = flow_criterion_diff_block
                             recon_flow = recon_flow_diff_block
                             res_out = res_out_diff_block
-                            no_use_loss = use_loss
-                        
-
-
-
+                            no_use_loss = use_loss                        
                 flow_loss += flow_criterion["mse_loss"].item()
                 flow_bpp += flow_criterion["bpp_loss"].item()
-
-                reconstruction_flow = recon_flow
-                                
+                reconstruction_flow = recon_flow                                
                 res_loss += res_criterion["mse_loss"].item()
                 res_bpp += res_criterion["bpp_loss"].item()
                 reconstruction_frame = res_out["x_hat"]
-
-                distortion += ((res_criterion["loss"] + flow_criterion["bpp_loss"]))
-                
-            
+                distortion += ((res_criterion["loss"] + flow_criterion["bpp_loss"]))                            
             G_loss = distortion
             G_loss.backward()
                                     
@@ -272,14 +240,12 @@ def trainIter(config, args):
             if iteration % config.diagnostic_steps == 0:                
                 print('[%d/%d][%d/%d]\tLoss_D: %.6f Loss_flow: %.6f Loss_res: %.6f bpp_flow: %.6f bpp_res: %.6f '
                         % (epoch, config.num_epochs, step, len(train_loader),
-                            0, flow_loss, res_loss, flow_bpp/(config.nb_frame-1), res_bpp/(config.nb_frame-1)))
-            
+                            0, flow_loss, res_loss, flow_bpp/(config.nb_frame-1), res_bpp/(config.nb_frame-1)))            
             if G_loss.item() < G_loss_best:
                 
                 utils.save_weights_api(flow_AE, res_AE, MC_net, opt_res_AE, args.name, name_suffix='best')
                 #utils.save_weights_api(flow_AE, res_AE, args.name, name_suffix='best')
-                G_loss_best = G_loss.item()
-            
+                G_loss_best = G_loss.item()            
             iteration += 1
         
         utils.save_weights_api(flow_AE, res_AE, MC_net, opt_res_AE, args.name)

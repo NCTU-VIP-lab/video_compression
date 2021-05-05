@@ -34,32 +34,23 @@ def read_video(path_name, config_test):
     std = [0.5, 0.5, 0.5]
     mean = [0.5, 0.5, 0.5]
     frames = torch.Tensor(frame_count, 3, img_col, img_row).zero_()
-    
-    
     train_transformations = transforms.Compose([
                                                 #transforms.Resize(size=(img_col, img_row)),
                                                 transforms.CenterCrop((img_col, img_row)),
                                                transforms.ToTensor()])
-
     if(cap.isOpened()):
-
         while(True):
             # Capture frame-by-frame
             ret, frame = cap.read()
             if(ret == True):
-                frame = Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGR2RGB))
-                
+                frame = Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGR2RGB))                
                 # transform
                 frame = train_transformations(frame)
                 frames[i] = frame
-                i = i + 1
-       
+                i = i + 1       
             else:
                 break
-
-    # When everything done, release the capture
     cap.release()
-
     return frames, frame_count
 
 
@@ -126,6 +117,9 @@ def main(**kwargs):
             save_image(Y0_raw, "./raw.png")
             os.system('.\\bpg\\bpgenc.exe -f 444 -m 9 ' + "./raw.png -o ./out.bin -q" + str(I_QP))
             os.system('.\\bpg\\bpgdec.exe ./out.bin -o ./out.png')
+            # if linux
+            # os.system('bpgenc -f 444 -m 9 ' + "./raw.png -o ./out.bin -q" + str(I_QP))
+            # os.system('bpgdec ./out.bin -o ./out.png')
             Y0_com = transfor(Image.open("./out.png"))
             tmp_frames[0] = Y0_com
 
