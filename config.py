@@ -12,7 +12,8 @@ class config_train(object):
     lambda_X = 1000
     lambda_bpp = 1
     channel_bottleneck = 48
-    nb_frame = 6
+    nb_frame = 5
+    skip_n_frames = 1
     img_row = 256
     img_col = 256
     use_residual = True

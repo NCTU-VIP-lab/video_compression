@@ -550,7 +550,7 @@ def bidir_forward_bd(config, epoch, start, end, mid, example, reconstruction_fra
         #res_criterion = criterion1(res_out, residual)
         res_criterion = criterion1(res_out, example[:,mid])
         
-        reconstruction_frame = warping_mid+res_out["x_hat"]
+        reconstruction_frame = res_out["x_hat"]
         #reconstruction_frames[:,i] = reconstruction_frame
     
     # if(epoch <= 10):
