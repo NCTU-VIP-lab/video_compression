@@ -117,8 +117,8 @@ def main(**kwargs):
             I_QP =  37 #[22, 27, 32, 37] 
             Y0_raw = tmp_ori[0]
             save_image(Y0_raw, "./raw.png")
-            os.system('bpgenc -f 444 -m 9 ' + "./raw.png -o ./out.bin -q" + str(I_QP))
-            os.system('bpgdec ./out.bin -o ./out.png')
+            os.system('".\\bpg\\bpgenc.exe" -f 444 -m 9 ' + "./raw.png -o ./out.bin -q" + str(I_QP))
+            os.system('".\\bpg\\bpgdec.exe" ./out.bin -o ./out.png')
             Y0_com = transfor(Image.open("./out.png"))
             tmp_frames[0] = Y0_com
 

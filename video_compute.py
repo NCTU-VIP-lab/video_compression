@@ -129,7 +129,7 @@ def compute_value(file_list):
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("-p", "--path", help="path to model to be restored", type=str)
+    parser.add_argument("-p", "--path", help="path to model to be restored", type=str, default=".\\videos\\diff-block-f6\\test\\Jockey_1920x1080_30fps_420_8bit_AVC_MP4.avi")
     parser.add_argument("-sr", "--show_respectively", help="show each result respectively", action="store_true", default=True)
     args = parser.parse_args()
     
