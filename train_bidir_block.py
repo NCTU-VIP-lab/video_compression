@@ -100,7 +100,7 @@ def trainIter(config, args):
         utils.load_weights_api(flow_AE, res_AE, MC_net, opt_res_AE, args.name)
         #utils.load_weights_api(flow_AE, res_AE, args.name)
     if args.pretrain_name:
-        utils.load_weights_api(flow_AE, res_AE, MC_net, None, args.pretrain_name)
+        utils.load_weights_api(flow_AE, res_AE, MC_net, opt_res_AE, args.pretrain_name)
     
     
     
@@ -180,7 +180,7 @@ def trainIter(config, args):
                     prior_encoder_intra, prior_decoder_intra, bit_estimator_intra,
                     res_encoder, res_decoder, flow_encoder, flow_decoder, prior_encoder_inter, prior_decoder_inter, bit_estimator_inter, example, ori_frames, config, args.name, epoch)
                 """
-                utils.sample_test_bidir(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_frames, config, index, max_edge, criterion1, args.name, epoch)
+                utils.sample_test_bidir_bd(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_frames, config, index, max_edge, criterion1, args.name, epoch)
                 #utils.sample_test_api(flow_AE, res_AE, example, ori_frames, config, args.name, epoch)
             # ============
             # train G
@@ -212,7 +212,8 @@ def trainIter(config, args):
                 # if(epoch <= 10):
                 #     flow_criterion_start_mid, flow_criterion_end_mid, reconstruction_flows = utils.bidir_forward(config, epoch, start, end, mid, example, reconstruction_frame_start, reconstruction_frame_end, max_edge, flow_AE, criterion1, MC_net, res_AE, opt_res_AE, reconstruction_flows)
                 # else:
-                reconstruction_frames[mid], flow_criterion_start_mid, flow_criterion_end_mid, res_criterion, reconstruction_flows = utils.bidir_forward(config, epoch, start, end, mid, example, reconstruction_frame_start, reconstruction_frame_end, max_edge, flow_AE, criterion1, MC_net, res_AE, opt_res_AE, reconstruction_flows)
+                reconstruction_frames[mid], flow_criterion_start_mid, flow_criterion_end_mid, res_criterion, reconstruction_flows, _ = utils.choose_best_method(config, epoch, start, end, mid, example, reconstruction_frame_start, reconstruction_frame_end, max_edge, flow_AE, criterion1, MC_net, res_AE, opt_res_AE, reconstruction_flows, use_block=config.use_block, use_opt_diff=config.use_flow_residual)
+                               
                 res_loss += res_criterion["mse_loss"].item()
                 res_bpp += res_criterion["bpp_loss"].item()
                 
@@ -222,6 +223,10 @@ def trainIter(config, args):
                 # Loss terms 
                 # =======================================================================================================>>>                                                                    
                 
+                # distortion += res_criterion["loss"] + flow_criterion_start_mid["bpp_loss"] + flow_criterion_end_mid["bpp_loss"]
+                # if epoch < 10:
+                #     distortion += flow_criterion_start_mid["loss"] + flow_criterion_end_mid["loss"]
+                # else:
                 distortion += res_criterion["loss"] + flow_criterion_start_mid["loss"] + flow_criterion_end_mid["loss"]
             
             res_aux_loss = res_AE.aux_loss()
@@ -233,21 +238,21 @@ def trainIter(config, args):
             G_loss = distortion
             G_loss.backward()
                                         
-            # torch.nn.utils.clip_grad_norm_(flow_AE.parameters(), 0.1)
-            # torch.nn.utils.clip_grad_norm_(res_AE.parameters(), 0.1)
-            # torch.nn.utils.clip_grad_norm_(MC_net.parameters(), 0.4)
+            torch.nn.utils.clip_grad_norm_(flow_AE.parameters(), 5)
+            torch.nn.utils.clip_grad_norm_(res_AE.parameters(), 5)
+            torch.nn.utils.clip_grad_norm_(opt_res_AE.parameters(), 5)
+            torch.nn.utils.clip_grad_norm_(MC_net.parameters(), 5)
             
             for net in Opt_G_nets:
                 net.step()
 
-            for scheduler in G_schs:
-                scheduler.step()
+            
             # Optimization
             # =======================================================================================================>>>            
             if iteration % config.diagnostic_steps == 0:                
-                print('[%d/%d][%d/%d]\tLoss_D: %.6f Loss_flow: %.6f Loss_res: %.6f bpp_flow: %.6f bpp_res: %.6f '
+                print('[%d/%d][%d/%d]\tLoss: %.6f Loss_flow: %.6f Loss_res: %.6f bpp_flow: %.6f bpp_res: %.6f '
                         % (epoch, config.num_epochs, step, len(train_loader),
-                            0, flow_loss, res_loss, flow_bpp/(config.nb_frame-2), res_bpp/(config.nb_frame-2)))
+                            distortion.item(), flow_loss, res_loss, flow_bpp/(config.nb_frame-2), res_bpp/(config.nb_frame-2)))
             
             if G_loss.item() < G_loss_best:
                 """
@@ -261,6 +266,7 @@ def trainIter(config, args):
                 G_loss_best = G_loss.item()
             
             iteration += 1
+        
         """
         utils.save_weights(
             encoder, self_attention_before, self_attention_after, decoder, discriminator, dcgan_generator,
@@ -268,6 +274,8 @@ def trainIter(config, args):
             res_encoder, res_decoder, flow_encoder, flow_decoder, prior_encoder_inter, prior_decoder_inter, bit_estimator_inter, args.name)
         """
         utils.save_weights_api(flow_AE, res_AE, MC_net, opt_res_AE, args.name)
+        for scheduler in G_schs:
+            scheduler.step()
         #utils.save_weights_api(flow_AE, res_AE, args.name)
     print('models have been saved.')
     print("Training Complete. Model saved to file: checkpoints/ Time elapsed: {:.3f} s".format(time.time()-start_time))
