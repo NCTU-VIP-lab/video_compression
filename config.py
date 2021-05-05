@@ -2,16 +2,17 @@
 
 class config_train(object):
     mode = 'gan-train'
-    start_epoch = 31
-    num_epochs = 46
+    start_epoch = 0
+    num_epochs = 16
     state_iter = 5
 
     #20 train normal
     #28 train residual
-    batch_size = 8
+    batch_size = 6
     ema_decay = 0.999
     G_learning_rate = 5e-5
     D_learning_rate = 5e-5
+    #5e-4 for bidor diff
     lr_decay_rate = 0.5
     lr_decay_period = 40
     momentum = 0.9
@@ -23,8 +24,8 @@ class config_train(object):
     using_ema = False
 
     # Compression
-    lambda_X = 200
-    lambda_bpp = 0.4
+    lambda_X = 256
+    lambda_bpp = 1
     channel_bottleneck = 48
     sample_noise = False
     use_vanilla_GAN = False
@@ -33,7 +34,7 @@ class config_train(object):
     #upsample_dim = 256
     upsample_dim = 256
     feature_matching_weight = 10
-    nb_frame = 9
+    nb_frame = 5
     # img_row = 320
     # img_col = 256
     img_row = 256
@@ -43,7 +44,7 @@ class config_train(object):
     use_residual = True
     res_late_start = 0
     use_msssim = False
-    use_flow_residual = False
+    use_flow_residual = True
     use_block = True
     mode = "psnr"
 
@@ -64,8 +65,8 @@ class config_test(object):
     diagnostic_steps = 64
 
     # Compression
-    lambda_X = 200
-    lambda_bpp = 0.4
+    lambda_X = 256
+    lambda_bpp = 1
     channel_bottleneck = 48
     sample_noise = False
     use_vanilla_GAN = False
@@ -76,7 +77,7 @@ class config_test(object):
     nb_frame = 8
     img_row = 1920
     img_col = 1024
-    use_flow_residual = False
+    use_flow_residual = True
     use_block = True
 
 

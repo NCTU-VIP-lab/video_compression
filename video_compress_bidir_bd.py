@@ -73,11 +73,11 @@ def main(**kwargs):
     
     training_phase = torch.tensor(False, dtype=torch.bool, requires_grad=False)       
     flow_AE = Cheng2020Attention_fix(N = config_test.channel_bottleneck,in_channel = 2).cuda().eval()
-    opt_res_AE = Cheng2020Attention_fix(N = config_test.channel_bottleneck, in_channel = 2).cuda()
+    opt_res_AE = Cheng2020Attention_fix(N = config_test.channel_bottleneck, in_channel = 2).cuda().eval()
 
     MC_net = network.MotionCompensationNet_bidir(input_size = 16, output_size = 3, channel = 64).cuda().eval()
     res_AE = Cheng2020Attention_fix(N = config_test.channel_bottleneck,in_channel = 3).cuda().eval()
-    criterion1 = RateDistortionLoss(lmbda=config_test.lambda_X, lmbda_bpp=0.4).cuda()
+    criterion1 = RateDistortionLoss(lmbda=config_test.lambda_X, lmbda_bpp=config_test.lambda_bpp).cuda()
     utils.load_weights_api(flow_AE, res_AE, MC_net, opt_res_AE, args.name)
 
     transfor = transforms.Compose([transforms.ToTensor()])
@@ -101,8 +101,7 @@ def main(**kwargs):
         res_bpp = 0
         intra_bpp = 0
         actual_bits = 0
-        use = 0
-        no_use = 0
+        method_list = [0, 0, 0, 0]
         path = path[:-1]
         video_n = path.split("/")[-1][:-4]
         frames, frame_count = read_video(path, config_test)
@@ -131,14 +130,14 @@ def main(**kwargs):
             tmp_frames = tmp_frames.view(-1, (config_test.nb_frame+1), frames.shape[1], frames.shape[2], frames.shape[3]).cuda()
             tmp_ori = tmp_ori.view(-1, (config_test.nb_frame+1), frames.shape[1], frames.shape[2], frames.shape[3]).cuda()
 
-            reconstruction_frames, example, clip_flow_bpp, clip_res_bpp, clip_intra_bpp, clip_actual_bits, use_t, no_use_t = utils.sample_test_bidir(flow_AE, res_AE, MC_net, opt_res_AE, tmp_frames, tmp_ori, config_test, index, max_edge, criterion1, args.name)
+            reconstruction_frames, example, clip_flow_bpp, clip_res_bpp, clip_intra_bpp, clip_actual_bits, methods = utils.sample_test_bidir_bd(flow_AE, res_AE, MC_net, opt_res_AE, tmp_frames, tmp_ori, config_test, index, max_edge, criterion1, args.name)
                                                                                                             
             flow_bpp += clip_flow_bpp
             res_bpp += clip_res_bpp
             intra_bpp += clip_intra_bpp
             actual_bits += clip_actual_bits
-            use += use_t
-            no_use += no_use_t
+            for i in range(4):
+                method_list[i] += methods[i]
 
             for i in range(config_test.nb_frame):
                 frame = np.append(example[0][i],reconstruction_frames[i].cpu().numpy()[0], axis = 2)
@@ -152,7 +151,7 @@ def main(**kwargs):
         print(" Flow bpp: ", flow_bpp/((config_test.nb_frame-1) * j))
         print(" Res bpp: ", res_bpp/((config_test.nb_frame-1) * j))
         print(" Intra bpp: ", intra_bpp/j)
-        print(" Use:NoUse ", use, no_use)
+        print(" Method:", method_list)
 
         avg_total_bpp += ((flow_bpp+res_bpp+intra_bpp) / (config_test.nb_frame * j))
         avg_flow_bpp += (flow_bpp / ((config_test.nb_frame-1) * j))
