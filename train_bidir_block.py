@@ -84,19 +84,7 @@ def trainIter(config, args):
     res_AE = Cheng2020Attention_fix(N = config.channel_bottleneck, in_channel = 3).cuda()
     criterion1 = RateDistortionLoss(lmbda=config.lambda_X, lmbda_bpp=config.lambda_bpp).cuda()
 
-    if config.use_2D_D is True:
-        discriminator = network.Discriminator(config, 3, 1).cuda()
-    else:
-        discriminator = network.Discriminator_3D(config, 3, 1).cuda()
-    
-
     if args.restore_last:
-        """
-        utils.load_weights(
-            encoder, self_attention_before, self_attention_after, decoder, discriminator, dcgan_generator,
-            prior_encoder_intra, prior_decoder_intra, bit_estimator_intra,
-            res_encoder, res_decoder, flow_encoder, flow_decoder, prior_encoder_inter, prior_decoder_inter, bit_estimator_inter, args.name, name_suffix=args.name_suffix, strict=True)
-        """
         utils.load_weights_api(flow_AE, res_AE, MC_net, opt_res_AE, args.name)
         #utils.load_weights_api(flow_AE, res_AE, args.name)
     if args.pretrain_name:
@@ -137,13 +125,7 @@ def trainIter(config, args):
     flow_scheduler = torch.optim.lr_scheduler.StepLR(flow_optimizer, step_size=config.state_iter, gamma=0.1)
     res_flow_scheduler = torch.optim.lr_scheduler.StepLR(flow_res_optimizer, step_size=config.state_iter, gamma=0.1)
     MC_net_scheduler = torch.optim.lr_scheduler.StepLR(MC_net_optimizer, step_size=config.state_iter, gamma=0.1)
-    res_scheduler = torch.optim.lr_scheduler.StepLR(res_optimizer, step_size=config.state_iter, gamma=0.1)
-
-
-    if config.use_vanilla_GAN is True:
-        criterion = torch.nn.BCELoss()
-    if config.use_vgg_loss is True:
-        vgg_loss = network.VGGLoss()
+    res_scheduler = torch.optim.lr_scheduler.StepLR(res_optimizer, step_size=config.state_iter, gamma=0.1)    
     
     G_nets = [res_AE, flow_AE, MC_net, opt_res_AE]
     #G_nets = [res_AE, flow_AE]
@@ -254,25 +236,13 @@ def trainIter(config, args):
                         % (epoch, config.num_epochs, step, len(train_loader),
                             distortion.item(), flow_loss, res_loss, flow_bpp/(config.nb_frame-2), res_bpp/(config.nb_frame-2)))
             
-            if G_loss.item() < G_loss_best:
-                """
-                utils.save_weights(
-                    encoder, self_attention_before, self_attention_after, decoder, discriminator, dcgan_generator,
-                    prior_encoder_intra, prior_decoder_intra, bit_estimator_intra,
-                    res_encoder, res_decoder, flow_encoder, flow_decoder, prior_encoder_inter, prior_decoder_inter, bit_estimator_inter, args.name, name_suffix='best')
-                """
+            if G_loss.item() < G_loss_best:                
                 utils.save_weights_api(flow_AE, res_AE, MC_net, opt_res_AE, args.name, name_suffix='best')
                 #utils.save_weights_api(flow_AE, res_AE, args.name, name_suffix='best')
                 G_loss_best = G_loss.item()
             
             iteration += 1
-        
-        """
-        utils.save_weights(
-            encoder, self_attention_before, self_attention_after, decoder, discriminator, dcgan_generator,
-            prior_encoder_intra, prior_decoder_intra, bit_estimator_intra,
-            res_encoder, res_decoder, flow_encoder, flow_decoder, prior_encoder_inter, prior_decoder_inter, bit_estimator_inter, args.name)
-        """
+                
         utils.save_weights_api(flow_AE, res_AE, MC_net, opt_res_AE, args.name)
         for scheduler in G_schs:
             scheduler.step()
