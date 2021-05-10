@@ -112,7 +112,7 @@ def main(**kwargs):
             tmp_ori = frames[j*config_test.nb_frame:(j+1)*config_test.nb_frame].clone()
 
             #use bpg to compress first frame
-            I_QP =  37 #[22, 27, 32, 37] 
+            I_QP =  29 #[22, 27, 32, 37] 
             Y0_raw = tmp_ori[0]
             save_image(Y0_raw, "./raw.png")
             os.system('.\\bpg\\bpgenc.exe -f 444 -m 9 ' + "./raw.png -o ./out.bin -q" + str(I_QP))

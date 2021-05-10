@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 class config_train(object):
-    start_epoch = 0
+    start_epoch = 2
     num_epochs = 10
     state_iter = 5
     batch_size = 2
@@ -9,10 +9,10 @@ class config_train(object):
     diagnostic_steps = 64
 
     # Compression
-    lambda_X = 1000
+    lambda_X = 2000
     lambda_bpp = 1
     channel_bottleneck = 48
-    nb_frame = 5
+    nb_frame = 6
     skip_n_frames = 1
     img_row = 256
     img_col = 256
@@ -27,10 +27,10 @@ class config_test(object):
     num_epochs = 512
     batch_size = 1        
     # Compression
-    lambda_X = 200
+    lambda_X = 2000
     lambda_bpp = 1
     channel_bottleneck = 48
-    nb_frame = 1
+    nb_frame = 15
     img_row = 1920
     img_col = 1024
     use_flow_residual = True

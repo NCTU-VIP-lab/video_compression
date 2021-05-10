@@ -100,6 +100,9 @@ def diff_forward(i, max_edge, use_diff, use_block, flow, reconstruction_flow, ex
         flow_out = flow_AE(flow)
         recon_flow = flow_out["x_hat"]
 
+    flow_out["x_hat"] = recon_flow
+    flow_criterion = criterion(flow_out, flow) 
+
     if use_block is True:
         recon_flow = up_pool(recon_flow)
 
@@ -107,7 +110,7 @@ def diff_forward(i, max_edge, use_diff, use_block, flow, reconstruction_flow, ex
     warping = run.backwarp(reconstruction_frame, recon_flow1)
     warping = MC_net(reconstruction_frame, recon_flow, warping)
     flow_out["x_hat"] = warping
-    flow_criterion = criterion(flow_out, example[:,i]) 
+    
     
 
     residual = example[:,i] - warping                                                                          

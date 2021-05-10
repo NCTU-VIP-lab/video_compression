@@ -64,7 +64,6 @@ def trainIter(config, args):
 
     if args.restore_last:
         utils.load_weights_api(flow_AE, res_AE, MC_net, opt_res_AE, args.name)
-        #utils.load_weights_api(flow_AE, res_AE, args.name)
     if args.pretrain_name:
         utils.load_weights_api(flow_AE, res_AE, MC_net, opt_res_AE, args.pretrain_name)
     
@@ -135,13 +134,7 @@ def trainIter(config, args):
             # testing
             
             #if (step == 0 and epoch > 20):
-            if (step == 0):  
-                """  
-                utils.sample_test(
-                    encoder, self_attention_before, self_attention_after, decoder, dcgan_generator,
-                    prior_encoder_intra, prior_decoder_intra, bit_estimator_intra,
-                    res_encoder, res_decoder, flow_encoder, flow_decoder, prior_encoder_inter, prior_decoder_inter, bit_estimator_inter, example, ori_frames, config, args.name, epoch)
-                """
+            if (step == 0):                  
                 utils.sample_test_diff_block(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_frames, config, args.name, epoch)
             # ============
             # train G
@@ -210,7 +203,8 @@ def trainIter(config, args):
                             flow_criterion = flow_criterion_diff_block
                             recon_flow = recon_flow_diff_block
                             res_out = res_out_diff_block
-                            no_use_loss = use_loss                        
+                            no_use_loss = use_loss         
+                                           
                 flow_loss += flow_criterion["mse_loss"].item()
                 flow_bpp += flow_criterion["bpp_loss"].item()
                 reconstruction_flow = recon_flow                                
@@ -243,12 +237,10 @@ def trainIter(config, args):
             if G_loss.item() < G_loss_best:
                 
                 utils.save_weights_api(flow_AE, res_AE, MC_net, opt_res_AE, args.name, name_suffix='best')
-                #utils.save_weights_api(flow_AE, res_AE, args.name, name_suffix='best')
                 G_loss_best = G_loss.item()            
             iteration += 1
         
         utils.save_weights_api(flow_AE, res_AE, MC_net, opt_res_AE, args.name)
-        #utils.save_weights_api(flow_AE, res_AE, args.name)
         for scheduler in G_schs:
             scheduler.step()
     print('models have been saved.')
