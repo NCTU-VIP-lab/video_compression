@@ -157,8 +157,8 @@ def sample_test_diff_block(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_fra
                 reconstruction_flow, example, reconstruction_frames[:,i-1], criterion1, 
                 flow_AE, opt_res_AE, MC_net, res_AE
             )
-            # no_use_loss = ((res_criterion["loss"].item() + flow_criterion["bpp_loss"].item()))
-            no_use_loss = res_criterion["loss"].item()
+            no_use_loss = ((res_criterion["loss"].item() + flow_criterion["loss"].item()))
+            # no_use_loss = res_criterion["loss"].item()
             if config.use_block is True:
                 recon_flow_block, res_criterion_block, flow_criterion_block, res_out_block = diff_forward(
                     i, max_edge, False, True, flow,
@@ -166,8 +166,8 @@ def sample_test_diff_block(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_fra
                         flow_AE, opt_res_AE, MC_net, res_AE
                 )
                 
-                # use_loss = ((res_criterion_block["loss"].item() + flow_criterion_block["bpp_loss"].item()))
-                use_loss = res_criterion_block["loss"].item()
+                use_loss = ((res_criterion_block["loss"].item() + flow_criterion_block["loss"].item()))
+                # use_loss = res_criterion_block["loss"].item()
                 if no_use_loss > use_loss:
                     res_criterion = res_criterion_block
                     flow_criterion = flow_criterion_block
@@ -183,8 +183,8 @@ def sample_test_diff_block(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_fra
                         reconstruction_flow, example, reconstruction_frames[:,i-1], criterion1, 
                         flow_AE, opt_res_AE, MC_net, res_AE
                 )
-                # use_loss = ((res_criterion_diff["loss"].item() + flow_criterion_diff["bpp_loss"].item()))
-                use_loss = res_criterion_diff["loss"].item()
+                use_loss = ((res_criterion_diff["loss"].item() + flow_criterion_diff["loss"].item()))
+                # use_loss = res_criterion_diff["loss"].item()
                 if no_use_loss > use_loss:
                     res_criterion = res_criterion_diff
                     flow_criterion = flow_criterion_diff
@@ -199,8 +199,8 @@ def sample_test_diff_block(flow_AE, res_AE, MC_net, opt_res_AE, example, ori_fra
                         reconstruction_flow, example, reconstruction_frames[:,i-1], criterion1, 
                         flow_AE, opt_res_AE, MC_net, res_AE
                     )
-                    # use_loss = ((res_criterion_diff_block["loss"].item() + flow_criterion_diff_block["bpp_loss"].item()))
-                    use_loss = res_criterion_diff_block["loss"].item()
+                    use_loss = ((res_criterion_diff_block["loss"].item() + flow_criterion_diff_block["loss"].item()))
+                    # use_loss = res_criterion_diff_block["loss"].item()
                     if no_use_loss > use_loss:
                         res_criterion = res_criterion_diff_block
                         flow_criterion = flow_criterion_diff_block

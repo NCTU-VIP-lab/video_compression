@@ -160,7 +160,7 @@ def trainIter(config, args):
                     reconstruction_flow, example, reconstruction_frame, criterion, 
                     flow_AE, opt_res_AE, MC_net, res_AE
                 )
-                no_use_loss = ((res_criterion["loss"].item() + flow_criterion["bpp_loss"].item()))
+                no_use_loss = ((res_criterion["loss"].item() + flow_criterion["loss"].item()))
                 if config.use_block is True:
                     recon_flow_block, res_criterion_block, flow_criterion_block, res_out_block = utils.diff_forward(
                         i, max_edge, False, True, flow,
@@ -168,7 +168,7 @@ def trainIter(config, args):
                          flow_AE, opt_res_AE, MC_net, res_AE
                     )
                     
-                    use_loss = ((res_criterion_block["loss"].item() + flow_criterion_block["bpp_loss"].item()))
+                    use_loss = ((res_criterion_block["loss"].item() + flow_criterion_block["loss"].item()))
                     if no_use_loss > use_loss:
                         res_criterion = res_criterion_block
                         flow_criterion = flow_criterion_block
@@ -183,7 +183,7 @@ def trainIter(config, args):
                          reconstruction_flow, example, reconstruction_frame, criterion, 
                          flow_AE, opt_res_AE, MC_net, res_AE
                     )
-                    use_loss = ((res_criterion_diff["loss"].item() + flow_criterion_diff["bpp_loss"].item()))
+                    use_loss = ((res_criterion_diff["loss"].item() + flow_criterion_diff["loss"].item()))
                     if no_use_loss > use_loss:
                         res_criterion = res_criterion_diff
                         flow_criterion = flow_criterion_diff
@@ -197,7 +197,7 @@ def trainIter(config, args):
                             reconstruction_flow, example, reconstruction_frame, criterion, 
                             flow_AE, opt_res_AE, MC_net, res_AE
                         )
-                        use_loss = ((res_criterion_diff_block["loss"].item() + flow_criterion_diff_block["bpp_loss"].item()))
+                        use_loss = ((res_criterion_diff_block["loss"].item() + flow_criterion_diff_block["loss"].item()))
                         if no_use_loss > use_loss:
                             res_criterion = res_criterion_diff_block
                             flow_criterion = flow_criterion_diff_block
